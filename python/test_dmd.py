@@ -2,12 +2,13 @@ import unittest
 import numpy as np
 from dmdtools import *
 
+
 class TestDMD(unittest.TestCase):
     def check_2d(self, f, **kwargs):
         eigvals = [0.5, 3.0]
         A = np.diag(eigvals)
-        x1 = [1,2]
-        x2 = [-1,1]
+        x1 = [1, 2]
+        x2 = [-1, 1]
         X = np.array([x1, x2]).T
         Y = np.dot(A, X)
         modes, evals = f(X, Y, **kwargs)
@@ -16,6 +17,19 @@ class TestDMD(unittest.TestCase):
 
     def test_2d(self):
         self.check_2d(dmd)
+
+    def test_2d_truncated(self):
+        # No truncation should be possible with dmd
+        # this mostly checks that the code doesn't crash
+        self.check_2d(dmd, rcond=1e-15)
+        self.check_2d(dmd, rcond=1e-6)
+        self.check_2d(dmd, rcond=1e-2)
+
+        # rcond < 0 should  fail
+        self.assertRaises(ValueError, self.check_2d,
+                          dmd, rcond=-1)
+        self.assertRaises(ValueError, self.check_2d,
+                          dmd, rcond=2)
 
     def test_2d_kernel_none(self):
         self.check_2d(kdmd, kernel=None)
@@ -39,7 +53,6 @@ class TestDMD(unittest.TestCase):
         Y = A.dot(X)
 
         modes, evals = f(X, Y, **kwargs)
-
         # Check that we have an eigenvalue near 1
         self.assertAlmostEqual(min(abs(evals - 1)), 0)
 
@@ -59,7 +72,7 @@ class TestDMD(unittest.TestCase):
                 # Check that the "best fit" eigenvalue is a good match
                 self.assertAlmostEqual(eigvals[index], evals[ii])
 
-                # AND, once normalize, we match an eigenvector
+                # AND, once normalized, we match an eigenvector
                 np.testing.assert_array_almost_equal(
                     abs(modes[:, ii]/np.linalg.norm(modes[:, ii])),
                     eigvecs[:, index])
@@ -69,6 +82,18 @@ class TestDMD(unittest.TestCase):
         for kernel_value in range(1, 5):
             self.check_2d_random_data(n_data, kdmd, kernel=kernel_value)
 
+    def test_2d_kernel_truncation(self):
+        n_data = 100
+        self.check_2d_random_data(n_data, kdmd, kernel=5, rcond=1e-15)
+        self.check_2d_random_data(n_data, kdmd, kernel=5, rcond=1e-10)
+        self.check_2d_random_data(n_data, kdmd, kernel=5, rcond=1e-8)
+
+        # rcond > 1 and rcond < 0 must produce exceptions
+        self.assertRaises(ValueError, self.check_2d_random_data,
+                          n_data, kdmd, kernel=5, rcond=2)
+
+        self.assertRaises(ValueError, self.check_2d_random_data,
+                          n_data, kdmd, kernel=5, rcond=-1)
 
 if __name__ == "__main__":
     unittest.main()

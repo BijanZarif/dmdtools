@@ -1,19 +1,46 @@
 import numpy as np
 
-def dmd(X, Y):
-    """Compute DMD modes and eigenvalues for data matrices X and Y"""
+
+def dmd(X, Y, rcond=1e-15):
+    """Compute DMD modes and eigenvalues for data matrices X and Y
+
+    Parameters
+    ==========
+    X: array
+        Columns contain snapshots at the initial time
+    Y: array
+        Columns contain the image of the snapshots in X
+    rcond: double, optional
+        Singular values below rcond*(maximum singular value) are treated as
+        zero.  In effect, this implements POD-based compression of the data.
+        By default, machine precision is used as the trunction level.
+
+    Returns
+    =======
+    modes: array (of complex numbers)
+        Columns contain DMD modes (approx. of Koopman modes)
+    evals: array (of complex numbers)
+        Contains the corresponding DMD eigenvalues
+    """
+
+    if (rcond > 1) or (rcond < 0):
+        raise ValueError("rcond must be 0 < rcond < 1")
+
     Qx, S, Vt = np.linalg.svd(X, full_matrices=False)
+    Sinv = np.where(S > rcond*np.max(S), 1.0/S, 0.0)
     V = Vt.T
-    Sinv = np.diag(1./S)
-    Ktilde = Qx.T.dot(Y).dot(V).dot(Sinv)
+    Ktilde = Qx.T.dot(Y).dot(V)*Sinv  # Broadcasting equiv to diag(Sinv)
     evals, evecK = np.linalg.eig(Ktilde)
     modes = Qx.dot(evecK)
     return modes, evals
 
+
 def polynomial_kernel(X, Y, n):
+    """A polynomial kernel for use with KMD"""
     return (1 + np.dot(X.T, Y)) ** n
 
-def kdmd(X, Y, kernel=None):
+
+def kdmd(X, Y, kernel=None, rcond=1e-15):
     """Compute Koopman modes and eigenvalues using kernel DMD
 
     Parameters
@@ -26,6 +53,10 @@ def kdmd(X, Y, kernel=None):
         If None (default) or zero, use kernel f(x,y) = x'y
         If integer ``n``, use polynomial kernel f(x,y) = (1 + x'y)^n
         If callable ``kernel``, use custom f(x,y) = kernel(x, y)
+    rcond: double, optional
+        Eigenvalues of G below rcond*(maximum eigenvalue) are treated as
+        zero.  In effect, this implements kernel PCA-based compression of
+        the data. By default, machine precision is used as the trunction level.
 
     Returns
     -------
@@ -34,6 +65,10 @@ def kdmd(X, Y, kernel=None):
     evals : array
         DMD eigenvalues
     """
+
+    if (rcond > 1) or (rcond < 0):
+        raise ValueError("rcond must be 0 < rcond < 1")
+
     if kernel is None or kernel == 0:
         # standard DMD
         G = np.dot(X.T, X)
@@ -46,10 +81,15 @@ def kdmd(X, Y, kernel=None):
         # use a custom kernel
         G = kernel(X, X)
         A = kernel(Y, X)
-    K = np.dot(np.linalg.pinv(G), A)
-    evals, evecs = np.linalg.eig(K.T)
-    Ginv = np.linalg.pinv(G)
-    modes = np.dot(X, np.dot(Ginv, evecs))
+
+    # Compute the SVD of G using method of snapshots
+    sigma_G, U_G = np.linalg.eigh(G)
+    sigma_Ginv = np.sqrt(np.where(sigma_G > rcond*np.max(sigma_G),
+                         1.0/sigma_G, 0.0))
+
+    That = U_G*sigma_Ginv
+    evals, evecs = np.linalg.eig(That.T.dot(A).dot(That))
+    modes = X.dot(That).dot(np.linalg.pinv(evecs.T))
     return modes, evals
 
 
